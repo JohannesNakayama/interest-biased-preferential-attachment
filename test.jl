@@ -5,11 +5,13 @@ using Graphs
 using Random
 using StatsBase
 using UnicodePlots
+using DataFrames
 
 # User API
 export IBPAModel
 export IBPANetwork
 export sample
+export IBPA
 
 # Interest-biased preferential attachment model
 mutable struct IBPAModel
@@ -20,52 +22,66 @@ mutable struct IBPAModel
     self_weight::Float64
 end
 
-# Interest-biasel preferential attachment network (instantiance of the above model)
+# Interest-biased preferential attachment network (instance of the above model)
 mutable struct IBPANetwork
     g::AbstractGraph
-    node_interest_map::Dict
+    node_interest_map::Dict  # TODO: as DataFrame
 end
 
 # Sample from a given IBPA model
 function sample(model::IBPAModel, samples)
-    samp = [evolve_model(model) for i in 1:samples]
+    samp = [run_model(model) for i in 1:samples]
     return samp
 end
 
 # Evolve a given model
-function evolve_model(model)
-
+function run_model(model)
     g = Graphs.SimpleGraph(model.m_0)
     node_interest_map = Dict([(i, Random.rand(1:model.n_interests)) for i in 1:nv(g)])
+    start = model.m_0 + 1
+    finish = model.n
 
-    for new_node in (model.m_0 + 1):model.n
-
-        node_degrees = degree(g)
-
-        new_node_interest = Random.rand(1:model.n_interests)
-
-        interest_weights = calculate_interest_weights(g, node_interest_map, new_node_interest, model.n_interests, model.self_weight)
-
-        node_weights = sum(node_degrees) == 0 ? repeat([1 / nv(g)], nv(g)) : node_degrees / sum(node_degrees)
-        interest_weights /= sum(interest_weights)
-
-        weights = (node_weights + interest_weights) / 2
-        samp = StatsBase.sample(1:nv(g), Weights(weights), model.m, replace = false)
-
-        add_vertex!(g)
-        for att in samp
-            add_edge!(g, (nv(g), att))
-        end
-
-        node_interest_map[nv(g)] = new_node_interest
-
+    for new_node in start:finish
+        add_ibpa_node!(g, node_interest_map, model)
     end
 
     return IBPANetwork(g, node_interest_map)
 end
 
+function add_ibpa_node!(g, node_interest_map, model)
+    node_degrees = degree(g)
+    new_node_interest = Random.rand(1:model.n_interests)
+
+    # Calculate weights
+    interest_weights = calculate_interest_weights(g, 
+                                                  node_interest_map, 
+                                                  new_node_interest, 
+                                                  model.n_interests, 
+                                                  model.self_weight)
+    node_weights = sum(node_degrees) == 0 ? repeat([1 / nv(g)], nv(g)) : node_degrees / sum(node_degrees)
+    weights = (node_weights + interest_weights) / 2
+
+    # Choose nodes to attach to
+    samp = StatsBase.sample(1:nv(g), Weights(weights), model.m, replace = false)
+
+    # Update graph
+    add_vertex!(g)
+    for att in samp
+        add_edge!(g, (nv(g), att))
+    end
+
+    node_interest_map[nv(g)] = new_node_interest
+
+    return g, node_interest_map
+end
+
+
 # Calculate the weights for each node given its interest
-function calculate_interest_weights(g::AbstractGraph, node_interest_map, new_node_interest, n_interests, self_weight)
+function calculate_interest_weights(g::AbstractGraph, 
+                                    node_interest_map, 
+                                    new_node_interest, 
+                                    n_interests, 
+                                    self_weight)
     interest_weights = ones(nv(g))
 
     for k in keys(node_interest_map)
@@ -76,10 +92,24 @@ function calculate_interest_weights(g::AbstractGraph, node_interest_map, new_nod
         end
     end
 
+    interest_weights /= sum(interest_weights)
+
     return interest_weights
 end
 
 end  # end module
+
+
+
+s = IBPA.sample(IBPA.IBPAModel(1000, 10, 3, 3, 0.5), 10)
+x = deepcopy(s[1].node_interest_map)
+
+pair_array = [(i, x[i]) for i in keys(x)]
+
+using DataFrames
+
+df = DataFrame(pair_array)
+rename!(df, [:NodeID, :Interest])
 
 
 # create m_0 initial nodes
