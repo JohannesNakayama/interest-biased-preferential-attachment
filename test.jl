@@ -101,15 +101,6 @@ end  # end module
 
 
 
-s = IBPA.sample(IBPA.IBPAModel(1000, 10, 3, 3, 0.5), 10)
-x = deepcopy(s[1].node_interest_map)
-
-pair_array = [(i, x[i]) for i in keys(x)]
-
-using DataFrames
-
-df = DataFrame(pair_array)
-rename!(df, [:NodeID, :Interest])
 
 
 # create m_0 initial nodes
